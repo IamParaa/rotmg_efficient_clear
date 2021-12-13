@@ -13,7 +13,6 @@ import threading
 import os
 import sys
 
-
 class AppConfig:
     def __init__(self, configName):
         if getattr(sys, 'frozen', False):
@@ -32,6 +31,7 @@ class AppConfig:
         self.server_url = config['SERVER_URL']
         self.network_refresh_rate = int(config['NETWORK_REFRESH_RATE'])
         self.room = config['ROOM']
+        self.password = config['PASSWORD']
         
         config = _config['Overlay']
         self.use_overlay = config['USE_OVERLAY'].lower().strip() == 'true'
@@ -43,8 +43,7 @@ class AppConfig:
         self.map_x = int(config['MAP_X'])
         self.map_y = int(config['MAP_Y'])
         self.alpha = int(config['ALPHA'])
-
-        
+     
 class MYGUI:
     def __init__(self, config, sct):
         if getattr(sys, 'frozen', False):
@@ -70,11 +69,12 @@ class MYGUI:
     
         self.use_network = self.config.use_network
         if self.use_network:
-            self.endpoint = self.config.server_url + '/' + self.config.room
+            self.endpoint = self.config.server_url + '/' + self.config.room + "?pw=" + self.config.password
             self.server = "..."
             self.n_cd = 0
             pub.subscribe(self.fullSync, "FullSync")
             pub.subscribe(self.partialSync, "PartialSync")
+            pub.subscribe(self.update_debug_log, "debug")
         
         self.use_overlay = self.config.use_overlay
         if self.use_overlay:
@@ -97,6 +97,9 @@ class MYGUI:
         self.estimate_text = "Marked Heroes: 0 "
         self.heroEstimateLabel = Label(self.root, bg="black", fg="#03fc62", font=("Arial", 25), text=self.estimate_text)
         self.heroEstimateLabel.place(relx=0.5, rely=0.02, anchor='center')
+
+        self.debugLabel = Label(self.root, bg="black", fg="#03fc62", font=("Arial", 25), text="debug:")
+        self.debugLabel.place(relx=.05,rely=0.95,anchor='sw')
         
         self.running = not (self.use_network or self.use_overlay)
         self.pause_text = "PAUSED"
@@ -115,8 +118,7 @@ class MYGUI:
             self.pauseLabel.place_forget()
             self.running = True
             self.update_clock()
-            
-        
+                  
     def init_markers(self):
         widthRatio = self.gui_width / self.config.map_width
         heightRatio = self.gui_height / self.config.map_height
@@ -215,7 +217,11 @@ class MYGUI:
             
         self.estimate_text = "Marked Heroes: " + est
         self.heroEstimateLabel.config(text=self.estimate_text)
-        
+  
+    def update_debug_log(self, data):
+        print(data)
+        self.debugLabel.config(text=str(data) + " are you logged in?")
+
     def init_maps_pis(self):
         self.baseMap = None
         self.mapPIs = []
@@ -273,8 +279,7 @@ class MYGUI:
             if self.use_network:
                 self.uploadMarker(circleId, newCirclePiId)
         self.update_hero_estimate()   
-         
-        
+                
     def right_click(self, event):
         c = (event.x, event.y)
         circleId = self.maybe_get_closest_circle_id(c)
@@ -320,9 +325,11 @@ class MYGUI:
         return ret
        
     def downloadMarkerPiIdxs(self):
+        #TODO: this
         pass                
     
     def resetServerMarkers(self):
+        #unused
        d = {'reset': 1}
        self.post(d)
         
@@ -340,7 +347,7 @@ class MYGUI:
         for i in range(128):
             data[str(i)] = str(self.markerPiIdxs[i])
         data['mapIdx'] = str(self.mapIdx)
-        data['server'] = str(self.server) #TODO
+        data['server'] = str(self.server) #TODO mogus
         self.uploadFullSyncComm = Communicator(self.endpoint, data=data, post=True)
         self.uploadFullSyncComm.start()
         
@@ -350,6 +357,7 @@ class MYGUI:
             return response.json()
         else:
             print("could not retrieve full info from server", response.reason)
+            self.update_debug_log(response)
     
     def fullSync(self, data):
         self.protected_markers = {}
@@ -402,7 +410,8 @@ class ReadWorker(threading.Thread):
         if response.ok:
             pub.sendMessage("fullListener", data=response.json())
         else:
-            print("could not retrieve full info from server", response.reason)
+            print("could not retrieve full info from server2", response.reason)
+            pub.sendMessage("debug",data=response)
         
 class Communicator(threading.Thread):
     def __init__(self, endpoint, queue=None, data=None, post=False):
@@ -425,7 +434,8 @@ class Communicator(threading.Thread):
         if response.ok:
             pub.sendMessage(queue, data=response.json())
         else:
-            print("could not retrieve full info from server", response.reason)
+            print("could not retrieve full info from server1", response.reason)
+            pub.sendMessage("debug",data=response)
        
     def sendData(self, data):
         if self.post:
